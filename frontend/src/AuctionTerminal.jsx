@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { connectAuctionStream, getAuction, placeBid } from './api.js';
+import { useParams, useNavigate } from 'react-router-dom';
+import { connectAuctionStream, getAuction, getAuthToken, placeBid } from './api.js';
+import PaymentModal from './PaymentModal.jsx';
 
 const tapeRows = [
   ['#35558', 'ACCEPTED', '$4,296,000', 'JumpTrading_Edge', 'Tokyo', '0.8ms / 0ms', 'Atomic compare-and-swap serialized successfully'],
@@ -29,30 +31,58 @@ function StatBadge({ label, value, tone = '' }) {
 }
 
 export default function AuctionTerminal() {
-  const auctionId = window.location.pathname.match(/\/auction\/([^/]+)/)?.[1] || window.location.hash.split('/')[1] || '108';
-  const token = window.localStorage.getItem('auctoz_token') || '';
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const auctionId = id || '108';
+  const token = getAuthToken();
   const [amount, setAmount] = useState('4296500');
   const [currentBid, setCurrentBid] = useState('4296000');
-  const [remaining, setRemaining] = useState(379.1);
+  const [remaining, setRemaining] = useState(0);
+  const [deadline, setDeadline] = useState(0);
   const [filter, setFilter] = useState('All');
   const [paused, setPaused] = useState(false);
   const [message, setMessage] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [auctionClosed, setAuctionClosed] = useState(false);
   useEffect(() => {
     let mounted = true;
     getAuction(auctionId, token).then(auction => {
-      if (mounted && auction.current_high_price) setCurrentBid(String(auction.current_high_price).replace('.', ''));
+      if (!mounted) return;
+      if (auction.current_high_price) setCurrentBid(String(auction.current_high_price));
+      if (auction.end_time) {
+        const nextDeadline = new Date(auction.end_time).getTime();
+        setDeadline(nextDeadline);
+        setRemaining(Math.max(0, (nextDeadline - Date.now()) / 1000));
+      }
     }).catch(error => mounted && setLoadError(error.message));
     const disconnect = token ? connectAuctionStream(token, update => {
-      if (update.auction_id === auctionId) setCurrentBid(String(update.current_high_price).replace('.', ''));
+      if (update.auction_id === auctionId) {
+        if (update.current_high_price) setCurrentBid(String(update.current_high_price));
+        if (update.end_time) {
+          const nextDeadline = new Date(update.end_time).getTime();
+          setDeadline(nextDeadline);
+          setRemaining(Math.max(0, (nextDeadline - Date.now()) / 1000));
+        }
+      }
     }, error => mounted && setLoadError(error.message)) : undefined;
     return () => { mounted = false; disconnect?.(); };
   }, [auctionId, token]);
   useEffect(() => {
-    const timer = window.setInterval(() => setRemaining(value => value <= 0.1 ? 379.1 : value - 0.1), 100);
+    if (!deadline) return undefined;
+    const timer = window.setInterval(() => {
+      const next = Math.max(0, (deadline - Date.now()) / 1000);
+      setRemaining(next);
+      
+      // Show payment modal when auction closes
+      if (next === 0 && !auctionClosed && currentBid) {
+        setAuctionClosed(true);
+        setShowPaymentModal(true);
+      }
+    }, 100);
     return () => window.clearInterval(timer);
-  }, []);
-  const clock = useMemo(() => `${Math.floor(remaining / 60).toString().padStart(2, '0')}:${(remaining % 60).toFixed(1).padStart(4, '0')}`, [remaining]);
+  }, [deadline, auctionClosed, currentBid]);
+  const clock = useMemo(() => `${Math.floor(remaining / 60).toString().padStart(2, '0')}:${(Math.max(0, remaining) % 60).toFixed(1).padStart(4, '0')}`, [remaining]);
   const visibleRows = tapeRows.filter(row => filter === 'All' || (filter === 'Accepted' && row[1] === 'ACCEPTED') || (filter === 'Rejected' && row[1] !== 'ACCEPTED') || (filter === 'Manual Bids' && row[3] === 'Trader_Direct_01'));
   const submitBid = async event => {
     event.preventDefault();
@@ -67,7 +97,16 @@ export default function AuctionTerminal() {
   };
   return <main className="auction-terminal">
     <div className="grain" />
-    <header className="terminal-nav"><a className="terminal-brand" href="#"><span className="brand-mark"><i /><i /></span>Auctoz</a><div className="terminal-nav-meta"><span>AUCTION ENGINE / 5000 REQ/S</span><b className="status-dot" /> ALL SYSTEMS NOMINAL <button type="button" onClick={() => { window.location.hash = ''; }}>EXIT TERMINAL</button></div></header>
+    <header className="terminal-nav">
+      <button className="terminal-brand" onClick={() => navigate('/assets')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <span className="brand-mark"><i /><i /></span>Auctoz
+      </button>
+      <div className="terminal-nav-meta">
+        <span>AUCTION ENGINE / 5000 REQ/S</span>
+        <b className="status-dot" /> ALL SYSTEMS NOMINAL
+        <button type="button" onClick={() => navigate('/assets')}>EXIT TERMINAL</button>
+      </div>
+    </header>
     <section className="auction-heading">
       <div><div className="auction-code">AUCTION-LOT #{auctionId} <span>/</span> TOKENIZED DEBT / HIGH-YIELD LIQUIDITY BOND</div><h1>Series-A Perpetual Treasury Bond<br /><em>(Liquidity Tranche)</em></h1><p>Mission-critical institutional yield asset with real-time atomic clearing and automated anti-sniping dynamic close.</p>{loadError && <div className="terminal-error">{loadError}</div>}</div>
       <div className="remaining"><span>TIME REMAINING</span><strong>{clock}</strong><small><b className="status-dot" /> DYNAMIC CLOSE ACTIVE</small></div>
@@ -80,6 +119,12 @@ export default function AuctionTerminal() {
     <section className="module telemetry-module"><div className="module-heading"><div><span>REAL-TIME TELEMETRY &amp; CONTENTION MONITORING</span><small>High-Throughput Performance &amp; Latency Analytics</small></div><b>STREAMING / 25 SEC ROLLING WINDOW</b></div><div className="kpi-row"><StatBadge label="INCOMING TPS" value="192" /><StatBadge label="ACCEPTED TPS" value="121" tone="positive" /><StatBadge label="REJECTED / STALE" value="71" tone="negative" /><StatBadge label="P99 BROADCAST" value="0.89ms" tone="warning" /><StatBadge label="LOCK CONTENTION" value="0%" /></div><div className="chart-grid"><article className="chart-card"><div className="chart-title"><span>THROUGHPUT STREAM <small>REQ/SEC</small></span><i className="legend green-dot" /> ACCEPTED <i className="legend grey-dot" /> INCOMING <i className="legend red-dot" /> REJECTED</div><TerminalSparkline /><div className="chart-axis"><span>25s AGO</span><span>NOW</span></div></article><article className="chart-card"><div className="chart-title"><span>BROADCAST &amp; SERIALIZATION LATENCY <small>MS</small></span><span className="goal">P99 GOAL: &lt; 15MS</span></div><TerminalSparkline latency /><div className="chart-axis"><span>P50 / P95 / P99 TAIL</span><span>0.89MS CURRENT</span></div></article></div></section>
     <section className="module tape-module"><div className="module-heading"><div><span>LIVE BID SERIALIZATION STREAM &amp; ORDER TAPE</span><small>Real-Time Ingestion Log &amp; Transaction Audit Tape</small></div><button className={`pause-button ${paused ? 'paused' : ''}`} type="button" onClick={() => setPaused(value => !value)}>{paused ? 'RESUME STREAM [▶]' : 'PAUSE STREAM [||]'}</button></div><div className="tape-controls">{['All', 'Accepted', 'Rejected', 'Manual Bids'].map(item => <button type="button" className={filter === item ? 'active' : ''} key={item} onClick={() => setFilter(item)}>{item}</button>)}</div><div className="tape-wrap"><table><thead><tr><th>SEQUENCE</th><th>STATUS</th><th>BID AMOUNT</th><th>CLIENT / BOT AGENT</th><th>REGION</th><th>LATENCY / WAIT</th><th>SERIALIZATION NOTE / REJECTION REASON</th></tr></thead><tbody>{visibleRows.map(row => <tr key={row[0]}><td>{row[0]}</td><td><span className={`status-badge ${row[1] === 'ACCEPTED' ? 'accepted' : 'stale'}`}>{row[1]}</span></td><td className="amount-cell">{row[2]}</td><td>{row[3]}</td><td>{row[4]}</td><td>{row[5]}</td><td className={row[1] === 'ACCEPTED' ? '' : 'rose-text'}>{row[6]}</td></tr>)}</tbody></table></div></section>
     <section className="module nodes-module"><div className="module-heading"><div><span>LOW-LATENCY WEBSOCKET BROADCAST PUSH NETWORK</span><small>Connected Edge Client Nodes &amp; Real-Time Price Sync</small></div><b className="sync-status"><i className="status-dot" /> ALL 6 EDGE REGIONS SYNCHRONIZED</b></div><div className="node-grid">{edgeNodes.map(node => <article className="node-card" key={node[0]}><div className="node-header"><span><i className="status-dot" /> {node[0]}</span><small>{node[1]}</small></div><div className="node-region">{node[2]}</div><div className="node-price"><span>SYNCED HIGHEST BID PRICE</span><strong>$6,19,000,000</strong></div><div className="node-metrics"><span>SEQ #51349</span><span>COLO PING <b>{node[3]}</b></span><span>PUSH Δ <b>{node[4]}</b></span></div></article>)}</div></section>
-    <footer className="terminal-footer">AUCTOZ <span>/</span> ENGINE ONLINE <b>AUCTION-LOT #108 / SECURE SERIALIZATION LANE</b></footer>
+    <footer className="terminal-footer">AUCTOZ <span>/</span> ENGINE ONLINE <b>AUCTION-LOT #{auctionId} / SECURE SERIALIZATION LANE</b></footer>
+    <PaymentModal 
+      isOpen={showPaymentModal}
+      onClose={() => setShowPaymentModal(false)}
+      auction={{ id: auctionId, title: 'Series-A Perpetual Treasury Bond' }}
+      winningBid={currentBid}
+    />
   </main>;
 }

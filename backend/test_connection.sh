@@ -39,7 +39,7 @@ status="$(curl -sS -o /tmp/auctoz-bid.json -w '%{http_code}' -X POST "$BASE_URL/
   -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
   -d "{\"auction_id\":\"$AUCTION_ID\",\"amount\":\"$bid_amount\"}")"
 [[ "$status" == "201" ]] || { cat /tmp/auctoz-bid.json; echo "Expected 201, got $status" >&2; exit 1; }
-lower="$(awk "BEGIN { printf \"%.2f\", $bid_amount - 1 }")"
+lower="$(awk -v amount="$bid_amount" 'BEGIN { delta = (amount < 1 ? 0.01 : 1); printf "%.2f", amount - delta }')"
 status="$(curl -sS -o /tmp/auctoz-outbid.json -w '%{http_code}' -X POST "$BASE_URL/api/v1/bids" \
   -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
   -d "{\"auction_id\":\"$AUCTION_ID\",\"amount\":\"$lower\"}")"

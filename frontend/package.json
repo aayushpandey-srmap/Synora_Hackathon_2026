@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "auctoz-frontend",
   "private": true,
   "version": "0.1.0",
@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
     "react": "latest",
-    "react-dom": "latest"
-  },
-  "devDependencies": {}
+    "react-dom": "latest",
+    "react-router-dom": "^7.18.4",
+    "vite": "latest"
+  }
 }

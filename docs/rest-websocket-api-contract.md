@@ -141,7 +141,7 @@ X-Request-ID: <optional opaque request ID>
 | `starting_price` | fixed-precision decimal string | yes | Exactly two decimals, `> 0`, fits `NUMERIC(12,2)` |
 | `start_time` | ISO-8601 string | yes | Valid `TIMESTAMPTZ` |
 | `end_time` | ISO-8601 string | yes | Valid `TIMESTAMPTZ`, strictly after `start_time` |
-| `status` | enum string | yes | Only `DRAFT` or `ACTIVE`; defaults to `DRAFT` if omitted by server policy |
+| `status` | enum string | no | Optional; defaults to `DRAFT` when omitted. Allowed values are `DRAFT` or `ACTIVE`. |
 
 `current_high_price` and `winner_id` are server-managed and must not be accepted in this request.
 

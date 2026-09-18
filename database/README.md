@@ -32,6 +32,7 @@ All `{id}` values are canonical lowercase UUID strings. Keys are scoped to an au
 | --- | --- | --- | --- |
 | `auction:{id}:price` | String | Decimal amount encoded as an ASCII string, e.g. `125.50` | Set on first activation; expire at `end_time + settlement_grace`. The settlement worker may delete it after PostgreSQL settlement is durable. |
 | `auction:{id}:leader` | String | Winning user UUID encoded as a string | Same TTL as the price key; must be updated atomically with the price. |
+| `auction:{id}:status` | String | Lifecycle state for the auction, for example `ACTIVE`, `CLOSED`, or `SETTLED` | TTL is set to the remaining auction lifetime plus the settlement grace window so the worker can reconcile and then clean it up. |
 | `auction:{id}:updates` | Pub/Sub channel | JSON event payload containing auction ID, price, leader ID, and event timestamp | Pub/Sub channels have no retained TTL or history. Consumers needing replay must use PostgreSQL or a separate stream (not this channel). |
 
 The price and leader keys are a consistency pair: all writes must occur through the same Lua script, and readers should treat either key being absent as “auction state unavailable/expired,” not as a zero price. The script should reject bids unless the new amount is strictly greater than the stored price and should publish only after both keys have been updated.

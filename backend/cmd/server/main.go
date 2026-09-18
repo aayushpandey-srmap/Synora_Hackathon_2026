@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	cfg:=config.Load(); if cfg.JWTSecret==""{log.Fatal("JWT_SECRET is required")}
+	cfg:=config.Load()
 	ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer cancel()
 	pool,err:=db.Open(ctx,cfg.DatabaseURL);if err!=nil{log.Fatal(err)};defer pool.Close()
 	rc,err:=auctionredis.Open(ctx,cfg.RedisURL);if err!=nil{log.Fatal(err)};defer rc.Close()
@@ -30,7 +30,7 @@ func main() {
 		if !exists { return pgx.ErrNoRows }
 		return nil
 	}
-	app:=&handlers.App{DB:pool,Redis:rc.Client,Secret:[]byte(cfg.JWTSecret),TTL:time.Duration(cfg.JWTTTL)*time.Second,Limiter:handlers.NewLimiter(cfg.RateLimitPerMinute),Hub:hub}
+	app:=&handlers.App{DB:pool,Redis:rc.Client,Secret:[]byte(cfg.JWTSecret),TTL:time.Duration(cfg.JWTTTL)*time.Second,Limiter:handlers.NewLimiter(cfg.RateLimitPerMinute),AuthLimiter:handlers.NewLimiter(cfg.AuthRateLimitPerMinute),GoogleClientID:cfg.GoogleClientID,TurnstileSecret:cfg.TurnstileSecret}
 	worker := &settlement.Worker{DB: pool, Redis: rc.Client, Interval: time.Second}
 	go worker.Run(ctx)
 	mux:=http.NewServeMux();mux.Handle("/ws",hub);mux.Handle("/",app.Routes())
