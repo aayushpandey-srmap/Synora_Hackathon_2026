@@ -1,0 +1,4 @@
+-- Canonical schema is maintained in database/schema.sql. Run that file before
+-- starting the service; this marker migration keeps deployment tooling explicit
+-- without altering the repository's schema-of-record.
+-- No destructive migrations are run automatically by the API process.
