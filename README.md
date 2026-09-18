@@ -31,8 +31,11 @@ Ingest: The React client fires a POST request to the Go backend via the AWS ALB.
 
 
 ├── /backend          # Go API handlers, WebSocket upgrader, Redis Lua scripts, PostgreSQL migrations
+
 ├── /frontend         # React application, Zustand state slices, WebSocket connection hooks
+
 ├── /infrastructure   # AWS ECS Terraform configs, Dockerfiles, ALB routing rules
+
 └── /load-testing     # Grafana k6 scripts simulating simultaneous HTTP POSTs and WS subscriptions
 
 Mitigation of Known Architectural RisksEphemeral Port Exhaustion: High-volume WebSocket connection counts (5,000+ per node) can exhaust TCP sockets. Resolved by tuning OS-level sysctl parameters on ECS containers and auto-scaling Go backend nodes via ALB using active connection metrics rather than CPU load alone.Redis Lua Script Blocking: Redis runs single-threaded; long scripts block operations. Solved by guaranteeing $O(1)$ operations with zero loops. JWT authentication and payload validation occur strictly in Go before touching Redis.Thundering Herd at Expiration: Massive read spikes occur when thousands of users refresh upon auction end. Mitigated by serving closed-auction states from Redis or an in-memory Go cache for 60 seconds post-close before querying PostgreSQL.NTP Clock Skew: Server clock variances could allow invalid late bids. Mitigated by enforcing auction expiration via Redis server time and centralized key TTLs rather than distributed Go instance system clocks.
